@@ -38,6 +38,7 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-fraunces);
 
   --color-cream: var(--color-cream);
   --color-card: var(--color-card);
@@ -69,6 +70,12 @@
    warm, calm look rather than following the OS dark-mode preference. */
 :root {
   color-scheme: light;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
 
 body {

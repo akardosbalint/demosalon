@@ -10,11 +10,19 @@ export type EmployeeSchedule = {
   employeeId: string;
   employeeName: string;
   active: boolean;
+  /** False when the employee has zero EmployeeAvailability rows — every
+   * `week` entry is then null too, but that must NOT be read as "never
+   * works": src/lib/booking.ts treats an unconfigured employee as
+   * available every day within the salon's default hours. Callers that
+   * display the schedule (not just edit it) need this to avoid showing
+   * a fully-unconfigured employee as fully booked off. */
+  configured: boolean;
   /** Index 0 = Sunday .. 6 = Saturday. Null means "not working that day". */
   week: DayAvailability[];
 };
 
-/** Every employee's current weekly schedule, for the admin "Munkarend" editor. */
+/** Every employee's current weekly schedule, for the admin "Munkarend"
+ * editor and the landing page's team section. */
 export async function getEmployeeSchedules(): Promise<EmployeeSchedule[]> {
   const employees = await prisma.employee.findMany({
     orderBy: { name: "asc" },
@@ -27,6 +35,7 @@ export async function getEmployeeSchedules(): Promise<EmployeeSchedule[]> {
       employeeId: e.id,
       employeeName: e.name,
       active: e.active,
+      configured: e.availability.length > 0,
       week: Array.from({ length: 7 }, (_, dayOfWeek) => {
         const row = byDay.get(dayOfWeek);
         return row ? { dayOfWeek, startHour: row.startHour, endHour: row.endHour } : null;
