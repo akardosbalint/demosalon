@@ -314,10 +314,17 @@ export async function findNextAvailableSlot(
       sum + item.durationMinutes + (index < planItems.length - 1 ? item.processingTimeMinutes : 0),
     0,
   );
-  const availabilityByEmployee = await loadAvailabilityByEmployee(planItems.map((p) => p.employeeId));
+  const employeeIds = planItems.map((p) => p.employeeId);
+  const availabilityByEmployee = await loadAvailabilityByEmployee(employeeIds);
 
   const timeZone = businessHours.timeZone ?? SALON_TIMEZONE;
   let candidate = roundUpToStep(input.earliestStart, stepMinutes);
+
+  // One query covering the whole search window instead of one per candidate
+  // slot — see loadBusySegments. +1 day of slack so the last day's close-of-
+  // business segments are fully covered.
+  const windowEnd = new Date(candidate.getTime() + (searchWindowDays + 1) * 24 * 60 * 60_000);
+  const busyByEmployee = await loadBusySegments(employeeIds, candidate, windowEnd);
 
   for (let day = 0; day < searchWindowDays; day++) {
     const dayAnchor = new Date(candidate);
@@ -329,7 +336,7 @@ export async function findNextAvailableSlot(
     while (slot.getTime() + totalActiveAndGapMinutes * 60_000 <= dayClose.getTime()) {
       const segments = planSequentialSegments(slot, planItems);
 
-      const unavailable = await isPlanUnavailable(segments, availabilityByEmployee, timeZone);
+      const unavailable = isPlanUnavailable(segments, availabilityByEmployee, busyByEmployee, timeZone);
       if (!unavailable) {
         return { startTime: segments[0].startTime, endTime: segments[segments.length - 1].endTime };
       }
@@ -342,18 +349,48 @@ export async function findNextAvailableSlot(
   return null;
 }
 
-async function anySegmentBusy(segments: PlannedSegment[]): Promise<boolean> {
-  for (const segment of segments) {
+type BusyInterval = { startTime: Date; endTime: Date };
 
-    const conflict = await prisma.bookingSegment.findFirst({
-      where: {
-        employeeId: segment.employeeId,
-        startTime: { lt: segment.endTime },
-        endTime: { gt: segment.startTime },
-      },
-      select: { id: true },
-    });
-    if (conflict) return true;
+/**
+ * Fetches every existing booking segment for the given employees within
+ * [windowStart, windowEnd) in a single query, so the slot-scanning loops in
+ * findNextAvailableSlot/listAvailableSlotsForDate can check each candidate
+ * slot in memory instead of issuing one DB round-trip per slot. That
+ * per-slot query used to run once per 15-minute step across the whole
+ * search window — ~30-90 sequential round-trips for a single day's slot
+ * list — which is unnoticeable against localhost but adds up to several
+ * real seconds against a networked database (e.g. Supabase); this
+ * collapses it to one query regardless of how many slots get evaluated.
+ */
+async function loadBusySegments(
+  employeeIds: string[],
+  windowStart: Date,
+  windowEnd: Date,
+): Promise<Map<string, BusyInterval[]>> {
+  if (employeeIds.length === 0) return new Map();
+  const rows = await prisma.bookingSegment.findMany({
+    where: {
+      employeeId: { in: [...new Set(employeeIds)] },
+      startTime: { lt: windowEnd },
+      endTime: { gt: windowStart },
+    },
+    select: { employeeId: true, startTime: true, endTime: true },
+  });
+  const map = new Map<string, BusyInterval[]>();
+  for (const row of rows) {
+    if (!map.has(row.employeeId)) map.set(row.employeeId, []);
+    map.get(row.employeeId)!.push({ startTime: row.startTime, endTime: row.endTime });
+  }
+  return map;
+}
+
+function anySegmentBusy(segments: PlannedSegment[], busyByEmployee: Map<string, BusyInterval[]>): boolean {
+  for (const segment of segments) {
+    const busy = busyByEmployee.get(segment.employeeId);
+    if (!busy) continue;
+    for (const b of busy) {
+      if (segment.startTime < b.endTime && b.startTime < segment.endTime) return true;
+    }
   }
   return false;
 }
@@ -402,13 +439,14 @@ function segmentWithinAvailability(
   return segment.startTime >= windowStart && segment.endTime <= windowEnd;
 }
 
-async function isPlanUnavailable(
+function isPlanUnavailable(
   segments: PlannedSegment[],
   availabilityByEmployee: Map<string, WeeklyAvailability>,
+  busyByEmployee: Map<string, BusyInterval[]>,
   timeZone: string,
-): Promise<boolean> {
+): boolean {
   if (segments.some((s) => !segmentWithinAvailability(s, availabilityByEmployee, timeZone))) return true;
-  return anySegmentBusy(segments);
+  return anySegmentBusy(segments, busyByEmployee);
 }
 
 function roundUpToStep(date: Date, stepMinutes: number): Date {
@@ -447,7 +485,8 @@ export async function listAvailableSlotsForDate(
       sum + item.durationMinutes + (index < planItems.length - 1 ? item.processingTimeMinutes : 0),
     0,
   );
-  const availabilityByEmployee = await loadAvailabilityByEmployee(planItems.map((p) => p.employeeId));
+  const employeeIds = planItems.map((p) => p.employeeId);
+  const availabilityByEmployee = await loadAvailabilityByEmployee(employeeIds);
 
   const dayOpen = businessHourToUtc(input.date, businessHours.startHour, timeZone);
   const dayClose = businessHourToUtc(input.date, businessHours.endHour, timeZone);
@@ -455,11 +494,15 @@ export async function listAvailableSlotsForDate(
   let slot = roundUpToStep(dayOpen > now ? dayOpen : now, stepMinutes);
   if (slot < dayOpen) slot = dayOpen;
 
+  // One query covering the whole day instead of one per candidate slot —
+  // see loadBusySegments.
+  const busyByEmployee = await loadBusySegments(employeeIds, dayOpen, dayClose);
+
   const results: { startTime: Date; endTime: Date }[] = [];
   while (slot.getTime() + totalActiveAndGapMinutes * 60_000 <= dayClose.getTime()) {
     const segments = planSequentialSegments(slot, planItems);
 
-    const unavailable = await isPlanUnavailable(segments, availabilityByEmployee, timeZone);
+    const unavailable = isPlanUnavailable(segments, availabilityByEmployee, busyByEmployee, timeZone);
     if (!unavailable) {
       results.push({
         startTime: segments[0].startTime,
