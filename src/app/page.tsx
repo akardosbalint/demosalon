@@ -195,8 +195,11 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <footer className="mx-auto w-full max-w-5xl px-6 py-8 text-center text-sm text-ink-faint">
-        © {new Date().getFullYear()} Bloom Szépségszalon
+      <footer className="mx-auto flex w-full max-w-5xl flex-col items-center gap-1 px-6 py-8 text-center text-sm text-ink-faint">
+        <p>© {new Date().getFullYear()} Bloom Szépségszalon</p>
+        <Link href="/admin/login" className="text-ink-faint underline decoration-dotted hover:text-ink-soft">
+          Admin belépés
+        </Link>
       </footer>
     </main>
   );
