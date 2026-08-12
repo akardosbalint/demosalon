@@ -40,30 +40,79 @@ táblát módosítod, mindig `--create-only`-val generálj migrációt, és kéz
 őrizd meg (vagy migráld át) az `EXCLUDE` constraint-et** — a Prisma drift
 detection nem ismeri, így egy automatikusan generált migráció eltávolítaná.
 
+## Adatbázis: Supabase (élő) + helyi Postgres (tesztekhez)
+
+Az alkalmazás (`.env` → `DATABASE_URL`) egy éles **Supabase** Postgres
+projektre van kötve — nem helyi adatbázisra. A `.env.test` viszont
+szándékosan **helyi** Postgres-t használ, hogy a tesztek (főleg a
+race-condition teszt, ami sok konkurens tranzakciót indít egy másodperc
+alatt) gyorsak és a Supabase-kvótától függetlenek maradjanak.
+
+- **Projekt**: `demosalon` (ref: `xgrqjbmqxnbkyughfzeq`), régió `eu-central-1`,
+  Supabase org "MI Építettük DEMO1".
+- **Kapcsolódási mód**: Supavisor **session-mode pooler** (5432, IPv4-kompatibilis,
+  támogat prepared statement-eket) — ugyanaz a connection string szolgálja ki
+  az appot ÉS a `prisma migrate` parancsokat, a Supabase hivatalos
+  "server-based deployments" Prisma-útmutatója szerint. Ha később
+  serverless/edge platformra (pl. Vercel Edge Functions) telepíted és sok
+  rövid életű konkurens kapcsolatra van szükség, válts a **transaction-mode**
+  poolerre (port 6543, `?pgbouncer=true&connection_limit=1`) az app
+  futásidejéhez, és tarts meg egy külön `DIRECT_URL`-t (session/direct, 5432)
+  a migrációkhoz.
+- **Dedikált `app_prisma` szerepkör**: nem a `postgres` superuser fut a
+  Prisma-kapcsolaton, hanem egy külön `app_prisma` role, ami a `public` séma
+  és minden tábla tulajdonosa (ez pontosan a Supabase saját Prisma-útmutatójában
+  is ajánlott minta). A jelszavát csak ebben a beszélgetésben generáltuk —
+  ha kompromittálódna, cseréld le: `ALTER USER app_prisma WITH PASSWORD '...';`
+  a Supabase SQL Editorban, majd frissítsd a `DATABASE_URL`-t.
+- **Row Level Security**: mind a 9 táblán **be van kapcsolva, policy nélkül**.
+  Supabase alapból minden `public` séma alatti táblát elérhetővé tesz a
+  PostgREST API-n (anon/authenticated kulccsal) — mivel ez az app kizárólag
+  Prisma-n keresztül, közvetlen DB-kapcsolattal éri el az adatokat (soha nem
+  supabase-js/PostgREST-en), az RLS policy nélküli bekapcsolása lezárja ezt a
+  nem szándékolt API-elérést anélkül, hogy az appot érintené (az `app_prisma`
+  a táblák tulajdonosa, ami automatikusan megkerüli az RLS-t).
+- **`btree_gist`** kiterjesztés az `extensions` sémában van (nem `public`-ban)
+  — Supabase best practice.
+
+**Fontos korlát ebben a fejlesztői környezetben**: ez a sandbox csak proxyzott
+HTTPS-t enged kifelé, nyers TCP-t (Postgres port) nem — így a séma és a demo
+adatok a Supabase MCP eszközökön keresztül (`apply_migration`/`execute_sql`)
+kerültek fel, nem a helyi `prisma migrate deploy`/`db seed` paranccsal. A
+`_prisma_migrations` táblát kézzel szinkronizáltuk a helyi checksumokkal, hogy
+egy jövőbeli `prisma migrate deploy` (valódi hálózati hozzáféréssel futtatva)
+ne ütközzön. **Ezt a lépést senki nem tesztelte ténylegesen `npm run dev`-vel
+Supabase ellen** — ha valódi hálózatú gépről futtatod, és valami nem
+kapcsolódik, először a `DATABASE_URL`-t ellenőrizd a Supabase Dashboard →
+Connect panelen (az `aws-0-eu-central-1` host-szegmens elméletileg helyes, de
+csak a dashboard a hiteles forrás).
+
 ## Fejlesztői környezet
 
 ```bash
 npm install                 # a postinstall lefuttatja a `prisma generate`-et
 
-# Két Postgres adatbázis kell: egy fejlesztői és egy teszt.
-createdb demosalon
+# A teszteknek külön, helyi Postgres kell (nem a Supabase-t használják):
 createdb demosalon_test
-psql demosalon -c 'CREATE EXTENSION IF NOT EXISTS btree_gist;'
 psql demosalon_test -c 'CREATE EXTENSION IF NOT EXISTS btree_gist;'
-
-# .env: DATABASE_URL a fejlesztői adatbázishoz, AUTH_SECRET (session JWT
-#       aláíráshoz, pl. `openssl rand -hex 32`), ADMIN_SEED_EMAIL/PASSWORD
-# .env.test: ugyanezek a teszt adatbázishoz
-
-npm run db:migrate          # migrációk alkalmazása a fejlesztői DB-n
-npm run db:seed             # demo alkalmazottak/szolgáltatások/kombinációk
-
-# A teszt adatbázison a migrációkat külön kell alkalmazni:
 DATABASE_URL=<teszt db url> npx prisma migrate deploy
 
-npm test                    # egység- és integrációs tesztek (.env.test-et használja)
-npm run dev                 # Next.js dev szerver
+# .env: már Supabase-re van állítva (lásd fent) — AUTH_SECRET (session JWT
+#       aláíráshoz, pl. `openssl rand -hex 32`), ADMIN_SEED_EMAIL/PASSWORD
+# .env.test: helyi teszt adatbázishoz
+
+npm test                    # egység- és integrációs tesztek (.env.test-et használja, helyi DB)
+npm run dev                 # Next.js dev szerver (Supabase-t használja)
 ```
+
+**Vigyázat jövőbeli séma-változtatásnál:** mivel `DATABASE_URL` most Supabase-re
+mutat, `npm run db:migrate` (`prisma migrate dev`) **ne** fusson közvetlenül
+ellene — a `migrate dev` drift-észlelésnél reset-et ajánlhat fel, ami törölné
+az éles/demo adatokat. Helyes sorrend: `prisma migrate dev` **helyi**
+`DATABASE_URL`-lel generáld le az új migrációt, ellenőrizd, majd
+`DATABASE_URL=<supabase-url> npx prisma migrate deploy`-jal (vagy a Supabase
+`apply_migration` MCP eszközzel) vidd fel Supabase-re — ugyanígy jártunk el az
+eddigi két migrációval is.
 
 ## Adatmodell
 
