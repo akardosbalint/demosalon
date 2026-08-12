@@ -31,6 +31,12 @@
   --color-danger-soft: #f6e4e2;
 
   --color-border: #ece1d8;
+
+  /* Decorative only (hero illustration) — not used for text/UI, so it's
+     exempt from the WCAG contrast pass the rest of the palette went
+     through. A soft rose to warm up the hero next to the terracotta. */
+  --color-blush: #dd8e93;
+  --color-blush-soft: #f8dfdd;
 }
 
 @theme inline {
@@ -61,6 +67,9 @@
   --color-danger-soft: var(--color-danger-soft);
 
   --color-border: var(--color-border);
+
+  --color-blush: var(--color-blush);
+  --color-blush-soft: var(--color-blush-soft);
 
   --shadow-soft: 0 2px 10px -2px rgb(43 35 32 / 0.08), 0 8px 24px -8px rgb(43 35 32 / 0.10);
   --shadow-soft-lg: 0 4px 16px -4px rgb(43 35 32 / 0.10), 0 16px 40px -12px rgb(43 35 32 / 0.14);

@@ -46,6 +46,27 @@ function formatSchedule(schedule: EmployeeSchedule | undefined): string {
   return dayLabel;
 }
 
+/** A simple 5-petal flower built from rotated ellipses — decorative only,
+ * no fabricated "real" photo or claim behind it. */
+function Flower({ className, petalColor }: { className?: string; petalColor: string }) {
+  return (
+    <svg viewBox="-30 -30 60 60" className={className} aria-hidden="true">
+      {[0, 72, 144, 216, 288].map((angle) => (
+        <ellipse key={angle} cx="0" cy="-15" rx="8.5" ry="13.5" transform={`rotate(${angle})`} fill={petalColor} />
+      ))}
+      <circle r="6" fill="var(--color-primary)" />
+    </svg>
+  );
+}
+
+function Sparkle({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="currentColor">
+      <path d="M12 0 L14.83 9.17 L24 12 L14.83 14.83 L12 24 L9.17 14.83 L0 12 L9.17 9.17 Z" />
+    </svg>
+  );
+}
+
 const TRUST_CHIPS = [
   "Nincs szükség regisztrációra",
   "Garantáltan nincs dupla foglalás",
@@ -135,8 +156,25 @@ export default async function LandingPage() {
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-accent-soft blur-3xl opacity-60"
+          className="pointer-events-none absolute -bottom-32 -left-24 h-96 w-96 rounded-full bg-blush-soft blur-3xl opacity-70"
         />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/3 left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-accent-soft blur-3xl opacity-40"
+        />
+
+        <Flower
+          petalColor="var(--color-blush)"
+          className="pointer-events-none absolute left-1 top-3 h-11 w-11 -rotate-12 opacity-90 sm:left-[8%] sm:top-16 sm:h-20 sm:w-20"
+        />
+        <Flower
+          petalColor="var(--color-accent-soft)"
+          className="pointer-events-none absolute right-1 top-3 h-8 w-8 rotate-45 opacity-80 sm:right-[10%] sm:top-28 sm:h-14 sm:w-14"
+        />
+        <Sparkle className="pointer-events-none absolute left-[20%] top-2 h-3.5 w-3.5 text-blush sm:top-10 sm:left-[24%] sm:h-4 sm:w-4" />
+        <Sparkle className="pointer-events-none absolute right-[18%] top-56 hidden h-5 w-5 text-primary sm:block sm:right-[22%]" />
+        <Sparkle className="pointer-events-none absolute right-[12%] top-4 h-3 w-3 text-accent sm:right-[6%] sm:top-8" />
+
         <div className="relative mx-auto flex w-full max-w-5xl flex-col items-center gap-6 px-6 pb-16 pt-10 text-center sm:pt-16">
           <p className="text-sm font-medium uppercase tracking-widest text-primary-hover">
             Hajápolás · Köröm · Szemöldök &amp; szempilla
