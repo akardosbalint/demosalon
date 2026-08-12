@@ -1,0 +1,145 @@
+// Beauty salon booking system — core data model.
+//
+// The double-booking guarantee lives in the database, not in application code:
+// see prisma/migrations/.../migration.sql for the `EXCLUDE USING gist`
+// constraint on booking_segments(employee_id, tstzrange(start_time, end_time)).
+// That constraint has no representation in this DSL, so schema drift checks
+// on this table must be reviewed by hand — see README.md "Schema drift" note.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Employee {
+  id              String   @id @default(cuid())
+  name            String
+  bio             String
+  photoUrl        String?  @map("photo_url")
+  experienceYears Int      @default(0) @map("experience_years")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  employeeServices EmployeeService[]
+  bookingSegments  BookingSegment[]
+
+  @@map("employees")
+}
+
+model Service {
+  id                   String   @id @default(cuid())
+  name                 String
+  slug                 String   @unique
+  description          String
+  durationMinutes      Int      @map("duration_minutes")
+  // Time between the end of this service and the start of the next one in a
+  // combo during which the employee is free to serve someone else (e.g. hair
+  // dye developing time). 0 for services with no dependency.
+  processingTimeMinutes Int     @default(0) @map("processing_time_minutes")
+  // Whole-currency-unit price (HUF has no minor unit in everyday use).
+  price                Int
+  active               Boolean  @default(true)
+  createdAt            DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  employeeServices EmployeeService[]
+  bookingSegments  BookingSegment[]
+  comboItems       ServiceComboItem[]
+
+  @@map("services")
+}
+
+model EmployeeService {
+  employeeId String @map("employee_id")
+  serviceId  String @map("service_id")
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  service  Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([employeeId, serviceId])
+  @@index([serviceId])
+  @@map("employee_services")
+}
+
+model ServiceCombo {
+  id              String   @id @default(cuid())
+  name            String
+  description     String?
+  isFeatured      Boolean  @default(false) @map("is_featured")
+  popularityScore Int      @default(0) @map("popularity_score")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  items ServiceComboItem[]
+
+  @@map("service_combos")
+}
+
+model ServiceComboItem {
+  comboId       String @map("combo_id")
+  serviceId     String @map("service_id")
+  sequenceOrder Int    @map("sequence_order")
+
+  combo   ServiceCombo @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  service Service      @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@id([comboId, serviceId])
+  @@index([serviceId])
+  @@map("service_combo_items")
+}
+
+enum BookingStatus {
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  NO_SHOW
+
+  @@map("booking_status")
+}
+
+model Booking {
+  id             String        @id @default(cuid())
+  customerName   String        @map("customer_name")
+  customerEmail  String        @map("customer_email")
+  customerPhone  String        @map("customer_phone")
+  status         BookingStatus @default(CONFIRMED)
+  notes          String?
+  cancelledAt    DateTime?     @map("cancelled_at") @db.Timestamptz(3)
+  reminderSentAt DateTime?     @map("reminder_sent_at") @db.Timestamptz(3)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  segments BookingSegment[]
+
+  @@index([customerEmail])
+  @@map("bookings")
+}
+
+// One row per (employee, service, time range) unit of work. A single Booking
+// is made of 1+ segments — one per service, possibly across different
+// employees and non-contiguous times when there's processing-time slack in
+// between. The employee_id + time-range overlap check that makes double
+// booking impossible at the database level is defined directly on this
+// table's columns (see migration.sql), which is why segments are the unit
+// of scheduling truth rather than the parent Booking.
+model BookingSegment {
+  id            String   @id @default(cuid())
+  bookingId     String   @map("booking_id")
+  employeeId    String   @map("employee_id")
+  serviceId     String   @map("service_id")
+  startTime     DateTime @map("start_time") @db.Timestamptz(3)
+  endTime       DateTime @map("end_time") @db.Timestamptz(3)
+  sequenceOrder Int      @map("sequence_order")
+
+  booking  Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  employee Employee @relation(fields: [employeeId], references: [id])
+  service  Service  @relation(fields: [serviceId], references: [id])
+
+  @@index([bookingId])
+  @@index([serviceId])
+  @@map("booking_segments")
+}
