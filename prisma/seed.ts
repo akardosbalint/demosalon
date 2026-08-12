@@ -1,5 +1,6 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
+import { hashPassword } from "../src/lib/auth";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -13,6 +14,17 @@ async function main() {
   await prisma.employeeService.deleteMany();
   await prisma.service.deleteMany();
   await prisma.employee.deleteMany();
+  await prisma.adminUser.deleteMany();
+
+  const adminEmail = process.env.ADMIN_SEED_EMAIL ?? "admin@bloomszepsegszalon.hu";
+  const adminPassword = process.env.ADMIN_SEED_PASSWORD ?? "salon-admin-2026";
+  await prisma.adminUser.create({
+    data: {
+      email: adminEmail,
+      name: "Szalon Admin",
+      passwordHash: await hashPassword(adminPassword),
+    },
+  });
 
   const [
     petra,
@@ -246,6 +258,7 @@ async function main() {
     employees: 5,
     services: 10,
     combos: [cutCombo.name, colorCombo.name, beautyCombo.name],
+    adminLogin: { email: adminEmail, password: adminPassword },
   });
 }
 

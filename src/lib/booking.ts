@@ -222,6 +222,34 @@ export async function cancelBooking(input: CancelBookingInput) {
   });
 }
 
+/**
+ * Admin-only: marks a past booking as a no-show. Unlike cancellation, this
+ * doesn't delete the booking's segments — the appointment time has already
+ * passed, so there's no future slot to free, and keeping the segments
+ * preserves accurate utilization stats.
+ */
+export async function markNoShow(bookingId: string) {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) {
+    throw new InvalidBookingRequestError("Ez a foglalás nem található.");
+  }
+  if (booking.status === "CANCELLED") {
+    throw new InvalidBookingRequestError("Egy lemondott foglalás nem jelölhető no-show-nak.");
+  }
+  return prisma.booking.update({ where: { id: bookingId }, data: { status: "NO_SHOW" } });
+}
+
+export async function markCompleted(bookingId: string) {
+  const booking = await prisma.booking.findUnique({ where: { id: bookingId } });
+  if (!booking) {
+    throw new InvalidBookingRequestError("Ez a foglalás nem található.");
+  }
+  if (booking.status === "CANCELLED") {
+    throw new InvalidBookingRequestError("Egy lemondott foglalás nem jelölhető megtörténtnek.");
+  }
+  return prisma.booking.update({ where: { id: bookingId }, data: { status: "COMPLETED" } });
+}
+
 export type FindNextAvailableSlotInput = {
   items: BookingItemInput[];
   earliestStart: Date;

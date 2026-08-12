@@ -7,7 +7,8 @@ adatbázis-szintű ütközés-detektálás.
 **Ez a repó jelenlegi állapota:**
 1. ✅ Prisma séma + adatbázis-szintű ütközés-detektálás (tesztelve)
 2. ✅ Vendégoldali foglalási folyamat, 4 lépésben (`/foglalas`)
-3. ⬜ Admin felület (naptár-nézet, manuális foglalás, statisztika) — még nincs
+3. ✅ Admin felület: bejelentkezés, napi naptár-nézet, manuális foglalás,
+   no-show/lemondás jelölés, alapstatisztika (`/admin`)
 
 ## Stack
 
@@ -50,8 +51,9 @@ createdb demosalon_test
 psql demosalon -c 'CREATE EXTENSION IF NOT EXISTS btree_gist;'
 psql demosalon_test -c 'CREATE EXTENSION IF NOT EXISTS btree_gist;'
 
-# .env: DATABASE_URL a fejlesztői adatbázishoz
-# .env.test: DATABASE_URL a teszt adatbázishoz
+# .env: DATABASE_URL a fejlesztői adatbázishoz, AUTH_SECRET (session JWT
+#       aláíráshoz, pl. `openssl rand -hex 32`), ADMIN_SEED_EMAIL/PASSWORD
+# .env.test: ugyanezek a teszt adatbázishoz
 
 npm run db:migrate          # migrációk alkalmazása a fejlesztői DB-n
 npm run db:seed             # demo alkalmazottak/szolgáltatások/kombinációk
@@ -110,6 +112,31 @@ lépésen, konkrét CTA-szöveggel ("Időpont lefoglalása").
   Resend/Twilio API-kulcs ebben a környezetben) — a hívási pontok már a
   helyükön vannak, éles bekötéskor csak ezt a fájlt kell cserélni.
 
+## Admin felület
+
+A `/admin` (bejelentkezés után `/admin/naptar`-ra irányít) egy saját,
+egyszerű session-alapú auth mögött fut — nem NextAuth/Lucia, hanem közvetlen
+`bcryptjs` jelszó-hash + `jose`-val aláírt, httpOnly cookie-ban tárolt JWT
+session, amit a `src/proxy.ts` (Next.js 16-ban ez a "middleware" új neve)
+ellenőriz minden `/admin/*` kérésnél. Az `AdminUser` táblát a seed script
+tölti fel (`ADMIN_SEED_EMAIL`/`ADMIN_SEED_PASSWORD` env várokból, alapértelmezett
+demo jelszóval — élesben ezt mindenképp cseréld le).
+
+- **Naptár** (`/admin/naptar`): napi nézet, oszloponként egy-egy
+  alkalmazottal, óránkénti rácsvonalakkal. Egy foglalásra kattintva
+  Megtörtént / No-show / Lemondás választható. A "+ Új foglalás" telefonos
+  vendégeknek szól — **ugyanazt a `createBooking`/`listAvailableSlotsForDate`/
+  `resolveAutoAssignment` logikát hívja**, mint a vendégoldali folyamat, tehát
+  nincs kétféle igazság az ütközés-ellenőrzésben.
+- **Statisztika** (`/admin/statisztika`): kihasználtság alkalmazottanként és
+  legnépszerűbb szolgáltatások, az elmúlt 30 nap alapján (`src/lib/admin.ts`).
+- **Korlát**: csak napi nézet készült el, heti nézet még nincs (a
+  specifikáció "napi/heti" közül egyelőre csak az első). A telefonos
+  foglalásnál az "automatikus szakember" mód egy egyszerű, determinisztikus
+  heurisztikát használ több-alkalmazottas kombinációknál (lásd
+  `resolveAutoAssignment` dokumentációját fent) — ugyanaz az egyszerűsítés,
+  mint a vendégoldalon.
+
 ## Fájlok
 
 - `prisma/schema.prisma` — adatmodell
@@ -123,7 +150,13 @@ lépésen, konkrét CTA-szöveggel ("Időpont lefoglalása").
   alkalmazottak)
 - `src/lib/timezone.ts` — Europe/Budapest ⇄ UTC konverzió, DST-biztos
 - `src/lib/notifications.ts` — email/SMS visszaigazolás és emlékeztető (stub)
+- `src/lib/admin.ts` — admin-only lekérdezések (napi szegmensek, statisztika)
+- `src/lib/auth.ts` / `src/lib/session.ts` — admin jelszó-hash + JWT session
+  (session.ts a proxy/Edge-biztos fele, auth.ts a Node-only bcrypt fele)
+- `src/proxy.ts` — `/admin/*` útvonalak auth-védelme (Next.js 16 "proxy",
+  korábban "middleware")
 - `src/app/foglalas/` — a 4 lépéses vendég-foglalási folyamat (wizard,
   server actions, komponensek)
+- `src/app/admin/` — admin bejelentkezés, naptár, statisztika
 - `src/lib/__tests__/` — egység- és integrációs tesztek, beleértve a
   race-condition tesztet

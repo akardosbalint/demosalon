@@ -85,3 +85,29 @@ export function localHourInTimezone(date: Date, timeZone: string = SALON_TIMEZON
     new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", hour: "2-digit" }).format(date),
   );
 }
+
+/** Minutes since local midnight (0-1439) of `date` in `timeZone` — for positioning on a day-grid. */
+export function localMinutesOfDay(date: Date, timeZone: string = SALON_TIMEZONE): number {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    hourCycle: "h23",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).formatToParts(date);
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  return hour * 60 + minute;
+}
+
+/** The [00:00, 24:00) local-calendar-day window for `dateOnly`, as UTC instants. */
+export function localDayRangeUtc(
+  dateOnly: Date,
+  timeZone: string = SALON_TIMEZONE,
+): { start: Date; end: Date } {
+  const start = businessHourToUtc(dateOnly, 0, timeZone);
+  const nextDay = new Date(
+    Date.UTC(dateOnly.getUTCFullYear(), dateOnly.getUTCMonth(), dateOnly.getUTCDate() + 1),
+  );
+  const end = businessHourToUtc(nextDay, 0, timeZone);
+  return { start, end };
+}
