@@ -14,6 +14,7 @@ async function main() {
   await prisma.serviceComboItem.deleteMany();
   await prisma.serviceCombo.deleteMany();
   await prisma.employeeService.deleteMany();
+  await prisma.employeeAvailability.deleteMany();
   await prisma.service.deleteMany();
   await prisma.employee.deleteMany();
   await prisma.adminUser.deleteMany();
@@ -25,6 +26,18 @@ async function main() {
       email: adminEmail,
       name: "Szalon Admin",
       passwordHash: await hashPassword(adminPassword),
+    },
+  });
+
+  // Fixed demo account advertised directly on /admin/login (with a
+  // one-click fill button) — kept at a stable id/email so it survives
+  // reseeds instead of silently disappearing the next time this script runs.
+  await prisma.adminUser.create({
+    data: {
+      id: "b6366f32-f110-4846-957a-6b4eabbbaa99",
+      email: "demo@salon.miepitettuk.hu",
+      name: "Demo Admin",
+      passwordHash: await hashPassword("DemoAdmin123"),
     },
   });
 
@@ -206,6 +219,27 @@ async function main() {
       { employeeId: eszter.id, serviceId: szaritas.id },
       { employeeId: eszter.id, serviceId: festes.id },
       { employeeId: eszter.id, serviceId: melir.id },
+    ],
+  });
+
+  // Default weekly working hours — deliberately varied (different days off,
+  // different windows) so the admin "Munkarend" editor and the
+  // availability-aware slot search both have something real to show.
+  // 0 = vasárnap .. 6 = szombat.
+  const [TUE, WED, THU, FRI, SAT] = [2, 3, 4, 5, 6];
+  const [MON] = [1];
+  await prisma.employeeAvailability.createMany({
+    data: [
+      // Petra: kedd-szombat, teljes nyitvatartás
+      ...[TUE, WED, THU, FRI, SAT].map((dayOfWeek) => ({ employeeId: petra.id, dayOfWeek, startHour: 9, endHour: 19 })),
+      // Réka: hétfő-péntek, 9-17 (nincs hétvégén)
+      ...[MON, TUE, WED, THU, FRI].map((dayOfWeek) => ({ employeeId: reka.id, dayOfWeek, startHour: 9, endHour: 17 })),
+      // Anna: kedd-szombat, teljes nyitvatartás
+      ...[TUE, WED, THU, FRI, SAT].map((dayOfWeek) => ({ employeeId: anna.id, dayOfWeek, startHour: 9, endHour: 19 })),
+      // Lilla: szerda-szombat, rövidebb, 10-16 (részmunkaidő)
+      ...[WED, THU, FRI, SAT].map((dayOfWeek) => ({ employeeId: lilla.id, dayOfWeek, startHour: 10, endHour: 16 })),
+      // Eszter: hétfő-szombat, teljes nyitvatartás
+      ...[MON, TUE, WED, THU, FRI, SAT].map((dayOfWeek) => ({ employeeId: eszter.id, dayOfWeek, startHour: 9, endHour: 19 })),
     ],
   });
 

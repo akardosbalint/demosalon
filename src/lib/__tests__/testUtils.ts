@@ -7,6 +7,7 @@ export async function resetDb() {
   await prisma.serviceComboItem.deleteMany();
   await prisma.serviceCombo.deleteMany();
   await prisma.employeeService.deleteMany();
+  await prisma.employeeAvailability.deleteMany();
   await prisma.service.deleteMany();
   await prisma.employee.deleteMany();
 }
@@ -51,6 +52,18 @@ export async function createTestService(
 
 export async function qualify(employeeId: string, serviceId: string) {
   await prisma.employeeService.create({ data: { employeeId, serviceId } });
+}
+
+/** Gives a test employee an explicit weekly schedule — once any row exists
+ * for them, weekdays not listed here become days off (see
+ * src/lib/booking.ts segmentWithinAvailability). */
+export async function setAvailability(
+  employeeId: string,
+  week: { dayOfWeek: number; startHour: number; endHour: number }[],
+) {
+  await prisma.employeeAvailability.createMany({
+    data: week.map((w) => ({ employeeId, ...w })),
+  });
 }
 
 export function customer(overrides: Partial<{ customerName: string; customerEmail: string; customerPhone: string }> = {}) {

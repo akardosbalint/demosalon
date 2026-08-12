@@ -194,12 +194,28 @@ demo jelszóval — élesben ezt mindenképp cseréld le).
   nincs kétféle igazság az ütközés-ellenőrzésben.
 - **Statisztika** (`/admin/statisztika`): kihasználtság alkalmazottanként és
   legnépszerűbb szolgáltatások, az elmúlt 30 nap alapján (`src/lib/admin.ts`).
+- **Munkarend** (`/admin/munkarend`): szakemberenkénti heti munkarend —
+  melyik napokon dolgozik az adott alkalmazott, és milyen időtartományban
+  (`EmployeeAvailability` tábla, `src/lib/staffing.ts`). Ez nem csak egy
+  admin-nézet: a foglalási motor (`listAvailableSlotsForDate`,
+  `findNextAvailableSlot` — `src/lib/booking.ts`) minden egyes szegmensre
+  ellenőrzi, hogy az adott szakember az adott helyi naptári napon,
+  az ott beállított időablakon belül van-e — egy szabadnapos vagy már
+  záró szakembernek sem a vendégoldal, sem az admin "Új foglalás" form
+  nem ajánl fel időpontot. Egy munkarend nélküli (a szerkesztőben soha meg
+  nem érintett) alkalmazott a régi viselkedést kapja: mindig elérhető a
+  szalon teljes nyitvatartásán belül — ez tartja életben a régebbi
+  teszteket és a még be nem állított alkalmazottakat. A munkaidő nem
+  lóghat ki a szalon nyitvatartásából (`DEFAULT_BUSINESS_HOURS`, jelenleg
+  9:00–19:00) — ez a külső "mikor van nyitva az üzlet" korlát, a
+  munkarend ezen belül szabja meg, ki mikor dolgozik.
 - **Korlát**: csak napi nézet készült el, heti nézet még nincs (a
   specifikáció "napi/heti" közül egyelőre csak az első). A telefonos
   foglalásnál az "automatikus szakember" mód egy egyszerű, determinisztikus
   heurisztikát használ több-alkalmazottas kombinációknál (lásd
   `resolveAutoAssignment` dokumentációját fent) — ugyanaz az egyszerűsítés,
-  mint a vendégoldalon.
+  mint a vendégoldalon. A munkarend csak a heti visszatérő mintát kezeli —
+  egyszeri kivétel (egy adott nap szabadsága, betegség) még nincs modellezve.
 
 ## Fájlok
 
@@ -216,6 +232,8 @@ demo jelszóval — élesben ezt mindenképp cseréld le).
 - `src/lib/catalog.ts` — csak-olvasható lekérdezések (szolgáltatások, kombók,
   alkalmazottak)
 - `src/lib/timezone.ts` — Europe/Budapest ⇄ UTC konverzió, DST-biztos
+- `src/lib/staffing.ts` — alkalmazottak heti munkarendjének lekérdezése/mentése
+- `src/app/admin/(dashboard)/munkarend/` — a munkarend-szerkesztő admin oldal
 - `src/lib/notifications.ts` — email/SMS visszaigazolás és emlékeztető
   (valódi Resend/Twilio integráció, env-vezérelt fallback naplózással)
 - `src/lib/reminders.ts` — az esedékes emlékeztetők kikeresése és kiküldése

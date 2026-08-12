@@ -37,8 +37,31 @@ model Employee {
 
   employeeServices EmployeeService[]
   bookingSegments  BookingSegment[]
+  availability     EmployeeAvailability[]
 
   @@map("employees")
+}
+
+// The employee's recurring weekly working hours. Absence of a row for a
+// given (employee, dayOfWeek) means "not configured for that day" — how
+// that's interpreted lives in src/lib/booking.ts: an employee with zero
+// rows at all is treated as available every day within the salon's
+// default business hours (legacy/unconfigured default, and what every
+// test employee gets), while an employee with at least one row is
+// treated as fully scheduled — any weekday without a row for them is a
+// day off. One-off exceptions (a single day's vacation/sick leave) are
+// out of scope for this model; see README "Ismert korlátok".
+model EmployeeAvailability {
+  id         String   @id @default(cuid())
+  employeeId String   @map("employee_id")
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  // 0 = vasárnap .. 6 = szombat (JS Date#getDay()/getUTCDay() konvenció).
+  dayOfWeek  Int      @map("day_of_week")
+  startHour  Int      @map("start_hour")
+  endHour    Int      @map("end_hour")
+
+  @@unique([employeeId, dayOfWeek])
+  @@map("employee_availability")
 }
 
 model Service {

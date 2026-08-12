@@ -34,6 +34,12 @@ export default async function AdminDashboardLayout({ children }: { children: Rea
             >
               Statisztika
             </Link>
+            <Link
+              href="/admin/munkarend"
+              className="rounded-lg px-3 py-1.5 text-sm font-medium text-ink-soft hover:bg-primary-soft hover:text-ink transition-colors"
+            >
+              Munkarend
+            </Link>
           </nav>
         </div>
       </header>

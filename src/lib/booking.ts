@@ -13,7 +13,7 @@ import {
   isExclusionViolation,
 } from "@/lib/booking-errors";
 import { findEmployeesQualifiedForAll, getActiveEmployeesWithQualifications } from "@/lib/catalog";
-import { SALON_TIMEZONE, businessHourToUtc } from "@/lib/timezone";
+import { SALON_TIMEZONE, businessHourToUtc, localDateOnly, localWeekday } from "@/lib/timezone";
 
 type PrismaTx = Prisma.TransactionClient;
 
@@ -314,6 +314,7 @@ export async function findNextAvailableSlot(
       sum + item.durationMinutes + (index < planItems.length - 1 ? item.processingTimeMinutes : 0),
     0,
   );
+  const availabilityByEmployee = await loadAvailabilityByEmployee(planItems.map((p) => p.employeeId));
 
   const timeZone = businessHours.timeZone ?? SALON_TIMEZONE;
   let candidate = roundUpToStep(input.earliestStart, stepMinutes);
@@ -328,8 +329,8 @@ export async function findNextAvailableSlot(
     while (slot.getTime() + totalActiveAndGapMinutes * 60_000 <= dayClose.getTime()) {
       const segments = planSequentialSegments(slot, planItems);
 
-      const busy = await anySegmentBusy(segments);
-      if (!busy) {
+      const unavailable = await isPlanUnavailable(segments, availabilityByEmployee, timeZone);
+      if (!unavailable) {
         return { startTime: segments[0].startTime, endTime: segments[segments.length - 1].endTime };
       }
       slot = new Date(slot.getTime() + stepMinutes * 60_000);
@@ -343,7 +344,7 @@ export async function findNextAvailableSlot(
 
 async function anySegmentBusy(segments: PlannedSegment[]): Promise<boolean> {
   for (const segment of segments) {
-     
+
     const conflict = await prisma.bookingSegment.findFirst({
       where: {
         employeeId: segment.employeeId,
@@ -355,6 +356,59 @@ async function anySegmentBusy(segments: PlannedSegment[]): Promise<boolean> {
     if (conflict) return true;
   }
   return false;
+}
+
+/** One employee's recurring weekly hours: dayOfWeek (0 Sun .. 6 Sat) → working window. */
+type WeeklyAvailability = Map<number, { startHour: number; endHour: number }>;
+
+/**
+ * Loads each employee's configured weekly schedule (src/app/admin/(dashboard)/munkarend
+ * manages these rows). An employee with no rows at all isn't in the
+ * returned map — segmentWithinAvailability treats that as "unconfigured,
+ * always available within business hours", matching pre-availability-
+ * feature behavior so employees nobody has scheduled yet (or test
+ * fixtures) keep working exactly as before.
+ */
+async function loadAvailabilityByEmployee(employeeIds: string[]): Promise<Map<string, WeeklyAvailability>> {
+  if (employeeIds.length === 0) return new Map();
+  const rows = await prisma.employeeAvailability.findMany({
+    where: { employeeId: { in: [...new Set(employeeIds)] } },
+  });
+  const map = new Map<string, WeeklyAvailability>();
+  for (const row of rows) {
+    if (!map.has(row.employeeId)) map.set(row.employeeId, new Map());
+    map.get(row.employeeId)!.set(row.dayOfWeek, { startHour: row.startHour, endHour: row.endHour });
+  }
+  return map;
+}
+
+/** True if `segment` falls entirely within its employee's configured working
+ * hours for that local calendar day (or the employee has no schedule
+ * configured at all — see loadAvailabilityByEmployee). */
+function segmentWithinAvailability(
+  segment: PlannedSegment,
+  availabilityByEmployee: Map<string, WeeklyAvailability>,
+  timeZone: string,
+): boolean {
+  const weekly = availabilityByEmployee.get(segment.employeeId);
+  if (!weekly) return true;
+
+  const hours = weekly.get(localWeekday(segment.startTime, timeZone));
+  if (!hours) return false; // has a schedule, but not configured to work this weekday
+
+  const dayAnchor = localDateOnly(segment.startTime, timeZone);
+  const windowStart = businessHourToUtc(dayAnchor, hours.startHour, timeZone);
+  const windowEnd = businessHourToUtc(dayAnchor, hours.endHour, timeZone);
+  return segment.startTime >= windowStart && segment.endTime <= windowEnd;
+}
+
+async function isPlanUnavailable(
+  segments: PlannedSegment[],
+  availabilityByEmployee: Map<string, WeeklyAvailability>,
+  timeZone: string,
+): Promise<boolean> {
+  if (segments.some((s) => !segmentWithinAvailability(s, availabilityByEmployee, timeZone))) return true;
+  return anySegmentBusy(segments);
 }
 
 function roundUpToStep(date: Date, stepMinutes: number): Date {
@@ -393,6 +447,7 @@ export async function listAvailableSlotsForDate(
       sum + item.durationMinutes + (index < planItems.length - 1 ? item.processingTimeMinutes : 0),
     0,
   );
+  const availabilityByEmployee = await loadAvailabilityByEmployee(planItems.map((p) => p.employeeId));
 
   const dayOpen = businessHourToUtc(input.date, businessHours.startHour, timeZone);
   const dayClose = businessHourToUtc(input.date, businessHours.endHour, timeZone);
@@ -404,8 +459,8 @@ export async function listAvailableSlotsForDate(
   while (slot.getTime() + totalActiveAndGapMinutes * 60_000 <= dayClose.getTime()) {
     const segments = planSequentialSegments(slot, planItems);
 
-    const busy = await anySegmentBusy(segments);
-    if (!busy) {
+    const unavailable = await isPlanUnavailable(segments, availabilityByEmployee, timeZone);
+    if (!unavailable) {
       results.push({
         startTime: segments[0].startTime,
         endTime: segments[segments.length - 1].endTime,

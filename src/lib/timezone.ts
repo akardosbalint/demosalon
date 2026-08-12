@@ -99,6 +99,20 @@ export function localMinutesOfDay(date: Date, timeZone: string = SALON_TIMEZONE)
   return hour * 60 + minute;
 }
 
+/** The local calendar date `date` falls on in `timeZone`, as a UTC-midnight
+ * anchored Date — the `dateOnly` shape `businessHourToUtc` expects, so the
+ * two compose safely even for an instant near a local midnight boundary. */
+export function localDateOnly(date: Date, timeZone: string = SALON_TIMEZONE): Date {
+  const [year, month, day] = dateKeyInTimezone(date, timeZone).split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+/** 0 (Sunday) .. 6 (Saturday) — the local calendar weekday `date` falls on
+ * in `timeZone`, matching JS `Date#getDay()`'s convention. */
+export function localWeekday(date: Date, timeZone: string = SALON_TIMEZONE): number {
+  return localDateOnly(date, timeZone).getUTCDay();
+}
+
 /** The [00:00, 24:00) local-calendar-day window for `dateOnly`, as UTC instants. */
 export function localDayRangeUtc(
   dateOnly: Date,
