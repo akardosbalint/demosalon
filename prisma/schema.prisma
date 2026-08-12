@@ -77,10 +77,14 @@ model EmployeeService {
 }
 
 model ServiceCombo {
-  id              String   @id @default(cuid())
-  name            String
-  description     String?
-  isFeatured      Boolean  @default(false) @map("is_featured")
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  isFeatured  Boolean @default(false) @map("is_featured")
+  // Editorial display-order hint only (admin-curated) — NOT shown to guests
+  // as a percentage anymore. The "X%-a ezt választja" badge is computed live
+  // from real booking history (src/lib/stats.ts) so it's never a made-up
+  // number; this field just breaks ties in list ordering.
   popularityScore Int      @default(0) @map("popularity_score")
   createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
@@ -114,7 +118,11 @@ enum BookingStatus {
 model Booking {
   id             String        @id @default(cuid())
   customerName   String        @map("customer_name")
-  customerEmail  String        @map("customer_email")
+  // Optional: guest self-booking always collects it (needed for the
+  // confirmation + self-service manage link), but admin-entered phone
+  // bookings shouldn't be forced to invent an address for a walk-in/phone
+  // customer who never gave one.
+  customerEmail  String?       @map("customer_email")
   customerPhone  String        @map("customer_phone")
   status         BookingStatus @default(CONFIRMED)
   notes          String?
@@ -122,6 +130,11 @@ model Booking {
   reminderSentAt DateTime?     @map("reminder_sent_at") @db.Timestamptz(3)
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime      @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  // Unguessable, unique per booking — the self-service "manage my booking"
+  // link (/foglalas/kezeles/[token]) is looked up by this, not by the
+  // primary key, so it can't be guessed by iterating booking IDs.
+  manageToken String @unique @default(cuid()) @map("manage_token")
 
   segments BookingSegment[]
 

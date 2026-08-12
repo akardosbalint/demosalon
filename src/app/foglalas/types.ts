@@ -12,7 +12,9 @@ export type ComboDTO = {
   name: string;
   description: string | null;
   isFeatured: boolean;
-  popularityScore: number;
+  /** Real percent of recent bookings that chose exactly this combo — null
+   * (never 0) when there isn't enough booking history yet. See src/lib/stats.ts. */
+  realPopularityPercent: number | null;
   serviceIds: string[];
 };
 

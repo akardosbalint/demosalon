@@ -94,7 +94,7 @@ export function NewBookingPanel({
     setSubmitError(null);
     const result = await createManualBookingAction({
       customerName,
-      customerEmail,
+      customerEmail: customerEmail.trim() || undefined,
       customerPhone,
       notes: notes || undefined,
       startTimeISO: selectedSlot.startTime,
@@ -120,12 +120,16 @@ export function NewBookingPanel({
   }, 0);
 
   const canSearch = selectedServiceIds.length > 0 && (mode === "auto" || selectedEmployeeId);
+  // Email is optional for phone-in customers — but if one is typed, it must
+  // be well-formed rather than silently dropped as garbage.
+  const trimmedEmail = customerEmail.trim();
+  const emailValid = trimmedEmail === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail);
   const canSubmit =
     resolvedItems &&
     selectedSlot &&
     customerName.trim().length > 1 &&
     customerPhone.trim().length > 5 &&
-    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim());
+    emailValid;
 
   return (
     <div
@@ -265,11 +269,14 @@ export function NewBookingPanel({
               />
               <input
                 type="email"
-                placeholder="E-mail cím"
+                placeholder="E-mail cím (opcionális)"
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
                 className="rounded-xl border border-border bg-card px-3 py-2 text-sm text-ink"
               />
+              {!emailValid && (
+                <p className="text-xs text-danger -mt-1.5">Nem tűnik érvényes e-mail címnek.</p>
+              )}
               <input
                 type="tel"
                 placeholder="Telefonszám"

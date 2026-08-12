@@ -57,6 +57,7 @@ export function BookingWizard({
     startTimeISO: string;
     serviceNames: string[];
     employeeNames: string[];
+    manageToken: string;
   } | null>(null);
 
   const servicesById = useMemo(() => new Map(services.map((s) => [s.id, s])), [services]);
@@ -227,7 +228,12 @@ export function BookingWizard({
 
     setSubmitting(false);
     if (result.ok) {
-      setConfirmed({ startTimeISO: result.startTime, serviceNames, employeeNames });
+      setConfirmed({
+        startTimeISO: result.startTime,
+        serviceNames,
+        employeeNames,
+        manageToken: result.manageToken,
+      });
     } else {
       setSubmitError(result.message);
       setSubmitSuggestion(result.suggestion ?? null);
@@ -254,6 +260,7 @@ export function BookingWizard({
           employeeNames={confirmed.employeeNames}
           startTimeISO={confirmed.startTimeISO}
           serviceNames={confirmed.serviceNames}
+          manageToken={confirmed.manageToken}
         />
       </div>
     );

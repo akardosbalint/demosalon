@@ -1,12 +1,16 @@
 import { prisma } from "@/lib/prisma";
+import { getComboPopularity } from "@/lib/stats";
 
 export async function getServicesAndCombos() {
-  const [services, combos] = await Promise.all([
+  const [services, combos, popularity] = await Promise.all([
     prisma.service.findMany({
       where: { active: true },
       orderBy: { name: "asc" },
     }),
     prisma.serviceCombo.findMany({
+      // popularityScore is now an editorial ordering hint only — see the
+      // schema comment. The displayed percentage comes from real booking
+      // history (below), never from this field.
       orderBy: { popularityScore: "desc" },
       include: {
         items: {
@@ -15,9 +19,16 @@ export async function getServicesAndCombos() {
         },
       },
     }),
+    getComboPopularity(),
   ]);
 
-  return { services, combos };
+  const percentByComboId = new Map(popularity.map((p) => [p.comboId, p.percent]));
+  const combosWithRealPopularity = combos.map((combo) => ({
+    ...combo,
+    realPopularityPercent: percentByComboId.get(combo.id) ?? null,
+  }));
+
+  return { services, combos: combosWithRealPopularity };
 }
 
 export async function getActiveEmployeesWithQualifications() {

@@ -33,7 +33,7 @@ export default async function FoglalasPage() {
     name: c.name,
     description: c.description,
     isFeatured: c.isFeatured,
-    popularityScore: c.popularityScore,
+    realPopularityPercent: c.realPopularityPercent,
     serviceIds: c.items.map((i) => i.serviceId),
   }));
 

@@ -12,7 +12,7 @@ import {
   EmployeeNotQualifiedError,
   InvalidBookingRequestError,
 } from "@/lib/booking-errors";
-import { sendBookingConfirmation, scheduleReminder } from "@/lib/notifications";
+import { sendBookingConfirmation, type BookingNotificationPayload } from "@/lib/notifications";
 
 export type SlotDTO = { startTime: string; endTime: string };
 
@@ -71,7 +71,7 @@ export type SubmitBookingInput = {
 };
 
 export type SubmitBookingResult =
-  | { ok: true; bookingId: string; startTime: string; endTime: string }
+  | { ok: true; bookingId: string; manageToken: string; startTime: string; endTime: string }
   | { ok: false; message: string; suggestion?: SlotDTO };
 
 export async function submitBookingAction(input: SubmitBookingInput): Promise<SubmitBookingResult> {
@@ -93,8 +93,9 @@ export async function submitBookingAction(input: SubmitBookingInput): Promise<Su
       booking.segments[0].endTime,
     );
 
-    const notificationPayload = {
+    const notificationPayload: BookingNotificationPayload = {
       bookingId: booking.id,
+      manageToken: booking.manageToken,
       customerName: input.customerName,
       customerEmail: input.customerEmail,
       customerPhone: input.customerPhone,
@@ -103,12 +104,20 @@ export async function submitBookingAction(input: SubmitBookingInput): Promise<Su
       employeeNames: input.employeeNames,
     };
     // Never let a notification hiccup fail an already-confirmed booking.
-    await Promise.allSettled([
-      sendBookingConfirmation(notificationPayload),
-      scheduleReminder(notificationPayload),
-    ]);
+    // The 24h-before reminder is sent separately, by the cron-driven scan
+    // in src/lib/reminders.ts — not here, since nothing running inside this
+    // request can hold a timer for hours.
+    await sendBookingConfirmation(notificationPayload).catch((err) => {
+      console.error(`[foglalas] confirmation notification failed for booking ${booking.id}:`, err);
+    });
 
-    return { ok: true, bookingId: booking.id, startTime: start.toISOString(), endTime: end.toISOString() };
+    return {
+      ok: true,
+      bookingId: booking.id,
+      manageToken: booking.manageToken,
+      startTime: start.toISOString(),
+      endTime: end.toISOString(),
+    };
   } catch (err) {
     if (err instanceof BookingConflictError) {
       return {

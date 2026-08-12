@@ -47,7 +47,9 @@ export async function fetchAdminAutoAssignmentAction(
 
 export type CreateManualBookingInput = {
   customerName: string;
-  customerEmail: string;
+  // Optional: a phone-in customer who never gave an email shouldn't force
+  // the admin to invent one. See src/lib/booking.ts CreateBookingInput.
+  customerEmail?: string;
   customerPhone: string;
   notes?: string;
   startTimeISO: string;

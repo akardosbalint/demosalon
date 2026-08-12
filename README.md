@@ -157,9 +157,24 @@ lépésen, konkrét CTA-szöveggel ("Időpont lefoglalása").
   idő szerint értendők; a `src/lib/timezone.ts` dependency-mentes,
   nyári/téli időszámítás-biztos konverziót végez UTC és helyi idő között
   (lásd `timezone.test.ts`, benne egy explicit DST-határnap teszttel).
-- **Email/SMS**: `src/lib/notifications.ts` jelenleg csak naplóz (nincs
-  Resend/Twilio API-kulcs ebben a környezetben) — a hívási pontok már a
-  helyükön vannak, éles bekötéskor csak ezt a fájlt kell cserélni.
+- **Email/SMS**: `src/lib/notifications.ts` valódi Resend (email) és Twilio
+  (SMS) integráció, csatornánként külön env-változókkal bekapcsolva
+  (`RESEND_API_KEY`, illetve `TWILIO_ACCOUNT_SID`/`TWILIO_AUTH_TOKEN`/
+  `TWILIO_FROM_NUMBER`) — ha egy csatorna nincs konfigurálva (mint ebben a
+  sandboxban), naplóba ír küldés helyett, sose dönti el a foglalást. Lásd
+  `.env.example`-t a teljes változólistához.
+- **Emlékeztető cron**: a visszaigazolás azonnal megy, de a "24 órával
+  előtte" emlékeztetőt nem lehet egy szerverless kérésen belül időzíteni —
+  ehelyett a `GET /api/cron/reminders` (`src/app/api/cron/reminders/route.ts`)
+  minden hívásra átvizsgálja a CONFIRMED, még nem emlékeztetett
+  (`reminder_sent_at IS NULL`) foglalásokat, amelyek legkorábbi szegmense a
+  következő 24 órán belül kezdődik (`src/lib/reminders.ts`), elküldi az
+  emlékeztetőt, majd beállítja `reminder_sent_at`-et — ismételt/átfedő
+  hívás sose küld duplán. A végpont `CRON_SECRET` nélkül 500-at ad (fail
+  closed), és csak pontos `Authorization: Bearer <CRON_SECRET>` fejléccel
+  fut le. Élesben egy külső ütemező (pl. Vercel Cron egy `vercel.json`
+  `crons` bejegyzéssel, vagy bármi más, ami óránként tud GET-et küldeni a
+  megfelelő fejléccel) hívja.
 
 ## Admin felület
 
@@ -190,7 +205,10 @@ demo jelszóval — élesben ezt mindenképp cseréld le).
 
 - `prisma/schema.prisma` — adatmodell
 - `prisma/migrations/*/migration.sql` — migráció, benne az `EXCLUDE` constraint
-- `prisma/seed.ts` — demo adatok (5 alkalmazott, 10 szolgáltatás, 3 kombináció)
+- `prisma/seed.ts` — demo adatok (5 alkalmazott, 10 szolgáltatás, 3
+  kombináció), plusz kb. 5 hét visszamenőleges, valódi `createBooking()`-on
+  átfutó foglalás — ezek adják a statisztikai/népszerűségi számok mögötti
+  tényleges adatot (lásd fent)
 - `src/lib/scheduling.ts` — tiszta, DB-mentes időzítés-számítás (egység tesztelt)
 - `src/lib/booking.ts` — tranzakciós foglalás-létrehozás, lemondás, szabad
   időpont keresés, auto-hozzárendelés
@@ -198,7 +216,11 @@ demo jelszóval — élesben ezt mindenképp cseréld le).
 - `src/lib/catalog.ts` — csak-olvasható lekérdezések (szolgáltatások, kombók,
   alkalmazottak)
 - `src/lib/timezone.ts` — Europe/Budapest ⇄ UTC konverzió, DST-biztos
-- `src/lib/notifications.ts` — email/SMS visszaigazolás és emlékeztető (stub)
+- `src/lib/notifications.ts` — email/SMS visszaigazolás és emlékeztető
+  (valódi Resend/Twilio integráció, env-vezérelt fallback naplózással)
+- `src/lib/reminders.ts` — az esedékes emlékeztetők kikeresése és kiküldése
+- `src/app/api/cron/reminders/route.ts` — `CRON_SECRET`-tel védett végpont,
+  amit egy külső ütemező hív
 - `src/lib/admin.ts` — admin-only lekérdezések (napi szegmensek, statisztika)
 - `src/lib/auth.ts` / `src/lib/session.ts` — admin jelszó-hash + JWT session
   (session.ts a proxy/Edge-biztos fele, auth.ts a Node-only bcrypt fele)

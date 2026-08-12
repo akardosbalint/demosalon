@@ -33,7 +33,11 @@ export type BookingItemInput = {
 
 export type CreateBookingInput = {
   customerName: string;
-  customerEmail: string;
+  // Optional: phone-only customers (typically admin-entered) may not have
+  // one. Guests booking themselves are still asked for it client-side —
+  // they need it to receive the confirmation and the self-service manage
+  // link — but the database doesn't enforce that, the guest form does.
+  customerEmail?: string;
   customerPhone: string;
   notes?: string;
   startTime: Date;
@@ -220,6 +224,39 @@ export async function cancelBooking(input: CancelBookingInput) {
       data: { status: "CANCELLED", cancelledAt: now },
     });
   });
+}
+
+export type BookingForManagement = Prisma.BookingGetPayload<{
+  include: { segments: { include: { employee: true; service: true } } };
+}>;
+
+/**
+ * Looks up a booking by its unguessable manage token (not by primary key) —
+ * this is what backs the guest-facing "/foglalas/kezeles/[token]" self-service
+ * page. Returns null rather than throwing so the page can render a clean
+ * "not found" state instead of a stack trace for a stale/mistyped link.
+ */
+export async function getBookingByManageToken(token: string): Promise<BookingForManagement | null> {
+  if (!token) return null;
+  return prisma.booking.findUnique({
+    where: { manageToken: token },
+    include: { segments: { include: { employee: true, service: true }, orderBy: { startTime: "asc" } } },
+  });
+}
+
+/**
+ * The self-service counterpart to `cancelBooking`: resolves the booking by
+ * manage token first (never by trusting a client-supplied booking id), then
+ * cancels it as the customer — so the 24h deadline still applies exactly as
+ * it would from the admin-triggered path, just scoped to whoever holds the
+ * link.
+ */
+export async function cancelBookingByManageToken(token: string, now?: Date) {
+  const booking = await prisma.booking.findUnique({ where: { manageToken: token }, select: { id: true } });
+  if (!booking) {
+    throw new InvalidBookingRequestError("Ez a foglalás nem található.");
+  }
+  return cancelBooking({ bookingId: booking.id, cancelledBy: "customer", now });
 }
 
 /**

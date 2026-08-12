@@ -1,6 +1,8 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/lib/auth";
+import { createBooking, markCompleted, markNoShow, type BookingItemInput } from "../src/lib/booking";
+import { businessHourToUtc } from "../src/lib/timezone";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -254,12 +256,191 @@ async function main() {
     },
   });
 
+  const { created, noShows } = await seedHistoricalBookings({
+    petraId: petra.id,
+    rekaId: reka.id,
+    annaId: anna.id,
+    lillaId: lilla.id,
+    eszterId: eszter.id,
+    mosasId: mosas.id,
+    vagasId: vagas.id,
+    szaritasId: szaritas.id,
+    festesId: festes.id,
+    manikurId: manikur.id,
+    gellakkId: gellakk.id,
+    pedikurId: pedikur.id,
+    szemoldokId: szemoldok.id,
+    szempillaId: szempilla.id,
+  });
+
   console.log("Seed complete:", {
     employees: 5,
     services: 10,
     combos: [cutCombo.name, colorCombo.name, beautyCombo.name],
+    historicalBookings: created,
+    historicalNoShows: noShows,
     adminLogin: { email: adminEmail, password: adminPassword },
   });
+}
+
+const HISTORY_CUSTOMER_NAMES = [
+  "Kiss Anikó",
+  "Horváth Bence",
+  "Molnár Zsófia",
+  "Varga Dániel",
+  "Németh Katalin",
+  "Farkas Gergő",
+  "Balogh Emese",
+  "Papp Levente",
+  "Takács Boglárka",
+  "Juhász Máté",
+  "Simon Réka",
+  "Fekete Örs",
+];
+
+type HistoryIds = {
+  petraId: string;
+  rekaId: string;
+  annaId: string;
+  lillaId: string;
+  eszterId: string;
+  mosasId: string;
+  vagasId: string;
+  szaritasId: string;
+  festesId: string;
+  manikurId: string;
+  gellakkId: string;
+  pedikurId: string;
+  szemoldokId: string;
+  szempillaId: string;
+};
+
+/**
+ * Backdated bookings, created through the exact same `createBooking()` the
+ * live app uses (same qualification checks, same DB exclusion constraint),
+ * so `src/lib/stats.ts` (combo popularity) and `src/lib/admin.ts` (service
+ * popularity, utilization) have genuine history to compute from instead of
+ * showing "még nincs elég adat" on a freshly seeded database. The spec's
+ * "never fabricated data" rule means the popularity numbers must come from
+ * real rows — this is what creates them, not a hand-picked percentage.
+ *
+ * Sessions cycle through a fixed pattern, two per business day for the
+ * last ~5 weeks, weighted so the cut combo is most common, the color combo
+ * second, and the beauty combo third — deliberately echoing the editorial
+ * `popularityScore` ordering above, but arrived at independently through
+ * real rows, not copied from it.
+ */
+async function seedHistoricalBookings(ids: HistoryIds): Promise<{ created: number; noShows: number }> {
+  type Session = { items: BookingItemInput[] };
+
+  const cutEmployees = [ids.petraId, ids.rekaId, ids.eszterId];
+  const colorEmployees = [ids.petraId, ids.eszterId];
+
+  const cutSession = (i: number): Session => {
+    const employeeId = cutEmployees[i % cutEmployees.length];
+    return {
+      items: [
+        { serviceId: ids.mosasId, employeeId },
+        { serviceId: ids.vagasId, employeeId },
+        { serviceId: ids.szaritasId, employeeId },
+      ],
+    };
+  };
+  const colorSession = (i: number): Session => {
+    const employeeId = colorEmployees[i % colorEmployees.length];
+    return {
+      items: [
+        { serviceId: ids.mosasId, employeeId },
+        { serviceId: ids.festesId, employeeId },
+        { serviceId: ids.szaritasId, employeeId },
+      ],
+    };
+  };
+  // Nobody does both nail art and brows — this combo always needs two
+  // employees, which the live "automatikus" assignment also falls back to.
+  const beautySession = (): Session => ({
+    items: [
+      { serviceId: ids.gellakkId, employeeId: ids.annaId },
+      { serviceId: ids.szemoldokId, employeeId: ids.lillaId },
+    ],
+  });
+  const manicureSession = (): Session => ({ items: [{ serviceId: ids.manikurId, employeeId: ids.annaId }] });
+  const pedicureSession = (): Session => ({ items: [{ serviceId: ids.pedikurId, employeeId: ids.annaId }] });
+  const lashesSession = (): Session => ({ items: [{ serviceId: ids.szempillaId, employeeId: ids.lillaId }] });
+
+  const pattern: Array<(i: number) => Session> = [
+    cutSession,
+    cutSession,
+    colorSession,
+    cutSession,
+    beautySession,
+    manicureSession,
+    cutSession,
+    colorSession,
+    cutSession,
+    beautySession,
+    pedicureSession,
+    cutSession,
+    colorSession,
+    cutSession,
+    lashesSession,
+    cutSession,
+    beautySession,
+    colorSession,
+    cutSession,
+    manicureSession,
+  ];
+
+  const HISTORY_WEEKDAYS = 24; // ~5 business weeks
+  const now = new Date();
+  const businessDays: Date[] = [];
+  for (let offset = 1; businessDays.length < HISTORY_WEEKDAYS; offset++) {
+    const d = new Date(now.getTime() - offset * 24 * 60 * 60_000);
+    if (d.getUTCDay() !== 0 && d.getUTCDay() !== 6) businessDays.push(d);
+  }
+  businessDays.reverse(); // oldest first, so the pattern index reads chronologically
+
+  const hours = [10, 15];
+  let created = 0;
+  let noShows = 0;
+
+  for (let dayIndex = 0; dayIndex < businessDays.length; dayIndex++) {
+    const day = businessDays[dayIndex];
+    for (let slot = 0; slot < hours.length; slot++) {
+      const patternIndex = dayIndex * hours.length + slot;
+      const session = pattern[patternIndex % pattern.length](patternIndex);
+      const startTime = businessHourToUtc(day, hours[slot]);
+      const name = HISTORY_CUSTOMER_NAMES[patternIndex % HISTORY_CUSTOMER_NAMES.length];
+      // Roughly half leave an email, half don't — mirrors the mix of
+      // guest self-booking (always has one) and admin phone entry
+      // (optional, see Gap 5 / prisma/schema.prisma Booking.customerEmail).
+      const hasEmail = patternIndex % 2 === 0;
+
+      try {
+        const booking = await createBooking({
+          customerName: name,
+          customerEmail: hasEmail
+            ? `${name.toLowerCase().replace(/\s+/g, ".")}@example.com`
+            : undefined,
+          customerPhone: `+3630${String(1000000 + patternIndex).padStart(7, "0")}`,
+          startTime,
+          items: session.items,
+        });
+        created++;
+        // A few realistic no-shows; everything else is a completed visit.
+        if (created % 11 === 0) {
+          await markNoShow(booking.id);
+          noShows++;
+        } else {
+          await markCompleted(booking.id);
+        }
+      } catch (err) {
+        console.warn(`Skipped a history booking (${(err as Error).message})`);
+      }
+    }
+  }
+
+  return { created, noShows };
 }
 
 main()

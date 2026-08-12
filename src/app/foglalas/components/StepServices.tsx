@@ -75,9 +75,9 @@ export function StepServices({
                           .join(" + ")}
                       </p>
                     </div>
-                    {combo.popularityScore > 0 && (
+                    {combo.realPopularityPercent !== null && (
                       <span className="shrink-0 rounded-full bg-accent-soft text-accent text-xs font-medium px-2.5 py-1">
-                        a vendégek {combo.popularityScore}%-a ezt választja
+                        a vendégek {combo.realPopularityPercent}%-a ezt választja
                       </span>
                     )}
                   </div>
