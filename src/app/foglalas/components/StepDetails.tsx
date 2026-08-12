@@ -80,7 +80,7 @@ export function StepDetails({
             value={customerName}
             onChange={(e) => onChangeName(e.target.value)}
             autoComplete="name"
-            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary"
+            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -92,7 +92,7 @@ export function StepDetails({
             onChange={(e) => onChangeEmail(e.target.value)}
             autoComplete="email"
             inputMode="email"
-            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary"
+            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -105,7 +105,7 @@ export function StepDetails({
             autoComplete="tel"
             inputMode="tel"
             placeholder="+36 30 123 4567"
-            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary"
+            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -114,7 +114,7 @@ export function StepDetails({
             value={notes}
             onChange={(e) => onChangeNotes(e.target.value)}
             rows={2}
-            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary resize-none"
+            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30 resize-none"
           />
         </label>
 

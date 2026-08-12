@@ -7,8 +7,8 @@ export default function AdminLoginPage() {
   const [state, formAction, pending] = useActionState(loginAction, undefined);
 
   return (
-    <div className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6">
-      <p className="text-sm font-medium uppercase tracking-widest text-primary">
+    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center px-6">
+      <p className="text-sm font-medium uppercase tracking-widest text-primary-hover">
         Bloom Szépségszalon
       </p>
       <h1 className="mt-2 text-xl font-semibold text-ink">Admin belépés</h1>
@@ -21,7 +21,7 @@ export default function AdminLoginPage() {
             type="email"
             required
             autoComplete="username"
-            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary"
+            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
           />
         </label>
         <label className="flex flex-col gap-1.5">
@@ -31,7 +31,7 @@ export default function AdminLoginPage() {
             type="password"
             required
             autoComplete="current-password"
-            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary"
+            className="rounded-xl border border-border bg-card px-4 py-3 text-ink outline-none focus:border-primary focus:ring-2 focus:ring-primary/30"
           />
         </label>
 
@@ -49,6 +49,6 @@ export default function AdminLoginPage() {
           {pending ? "Belépés…" : "Belépés"}
         </button>
       </form>
-    </div>
+    </main>
   );
 }

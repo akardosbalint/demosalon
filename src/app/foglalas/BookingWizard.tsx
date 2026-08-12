@@ -86,6 +86,11 @@ export function BookingWizard({
     [selectedServiceIds, servicesById],
   );
 
+  const detailsValid =
+    customerName.trim().length > 1 &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customerEmail.trim()) &&
+    customerPhone.trim().length > 5;
+
   // Refetch the day's slots whenever the resolved employee assignment or the
   // chosen date changes. `slotsLoading`/`emptySuggestion` are armed by the
   // callers that change these two values (see setSelectedDateKey call
@@ -279,7 +284,7 @@ export function BookingWizard({
     }
     return {
       label: submitting ? "Foglalás…" : "Időpont lefoglalása",
-      disabled: submitting,
+      disabled: submitting || !detailsValid,
       formId: "booking-details-form",
     };
   })();

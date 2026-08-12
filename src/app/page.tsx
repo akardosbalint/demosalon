@@ -2,8 +2,8 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
-      <p className="text-sm font-medium uppercase tracking-widest text-primary">Bloom Szépségszalon</p>
+    <main className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
+      <p className="text-sm font-medium uppercase tracking-widest text-primary-hover">Bloom Szépségszalon</p>
       <h1 className="mt-4 max-w-md text-3xl font-semibold text-ink sm:text-4xl">
         Foglalj időpontot percek alatt
       </h1>
@@ -17,6 +17,6 @@ export default function Home() {
       >
         Időpont foglalása
       </Link>
-    </div>
+    </main>
   );
 }

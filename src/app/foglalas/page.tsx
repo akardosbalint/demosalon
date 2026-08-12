@@ -5,6 +5,14 @@ export const metadata = {
   title: "Időpontfoglalás — Bloom Szépségszalon",
 };
 
+// Without this, Next.js statically prerenders this page at build time (no
+// cookies/params force it dynamic on their own) and bakes in whatever
+// service/employee IDs existed at build time. Any DB change after
+// deploy — a new service, a price edit, a reseed — then makes every visitor's
+// client hold IDs the server no longer recognizes, crashing step 2→3 of the
+// booking flow. Service/employee data must be read fresh on every request.
+export const dynamic = "force-dynamic";
+
 export default async function FoglalasPage() {
   const [{ services, combos }, employees] = await Promise.all([
     getServicesAndCombos(),

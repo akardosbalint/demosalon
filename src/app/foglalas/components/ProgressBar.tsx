@@ -2,7 +2,7 @@ const STEP_LABELS = ["Szolgáltatás", "Szakember", "Időpont", "Adatok"];
 
 export function ProgressBar({ step }: { step: 1 | 2 | 3 | 4 }) {
   return (
-    <div aria-label={`${step}. lépés a ${STEP_LABELS.length}-ból`} className="w-full">
+    <div className="w-full">
       <div className="flex items-center justify-between text-xs font-medium text-ink-soft mb-2">
         <span>
           {step}/{STEP_LABELS.length}. lépés
@@ -11,9 +11,11 @@ export function ProgressBar({ step }: { step: 1 | 2 | 3 | 4 }) {
       </div>
       <div
         role="progressbar"
+        aria-label="Foglalási folyamat előrehaladása"
         aria-valuenow={step}
         aria-valuemin={1}
         aria-valuemax={STEP_LABELS.length}
+        aria-valuetext={`${step}. lépés a ${STEP_LABELS.length}-ból: ${STEP_LABELS[step - 1]}`}
         className="flex gap-1.5"
       >
         {STEP_LABELS.map((label, i) => (

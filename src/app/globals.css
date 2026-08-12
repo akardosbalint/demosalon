@@ -10,12 +10,18 @@
   --color-ink-soft: #6b5b54;
   --color-ink-faint: #9c8d85;
 
-  --color-primary: #b4694a;
-  --color-primary-hover: #9c5a3e;
+  /* Darkened from the original #b4694a: white button text on it was only
+     4.15:1, below WCAG AA's 4.5:1 for normal-size text. #a66144 clears it
+     at 4.76:1 while staying the same warm terracotta. */
+  --color-primary: #a66144;
+  --color-primary-hover: #90543b;
   --color-primary-soft: #f4e4db;
   --color-primary-soft-hover: #eed3c4;
 
-  --color-accent: #7c6a8e;
+  /* #705f80 rather than the lighter #7c6a8e: 4.75:1 against --color-accent-soft,
+     clearing WCAG AA's 4.5:1 for normal text (the 68%/42% social-proof badges
+     were failing at 4.01:1 with the lighter shade). */
+  --color-accent: #705f80;
   --color-accent-soft: #ece7f2;
 
   --color-success: #4e7a5d;
