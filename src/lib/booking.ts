@@ -12,17 +12,19 @@ import {
   InvalidBookingRequestError,
   isExclusionViolation,
 } from "@/lib/booking-errors";
+import { findEmployeesQualifiedForAll, getActiveEmployeesWithQualifications } from "@/lib/catalog";
+import { SALON_TIMEZONE, businessHourToUtc } from "@/lib/timezone";
 
 type PrismaTx = Prisma.TransactionClient;
 
 /**
- * Business hours are expressed as UTC hour-of-day bounds. Converting the
- * salon's real local opening hours (with DST) into the correct UTC bounds
- * for a given calendar date is the caller's responsibility — this module
- * intentionally stays timezone-agnostic per the "store UTC, convert on the
- * client" requirement.
+ * Business hours as local wall-clock bounds in the salon's timezone
+ * (`timeZone`, defaulting to Europe/Budapest). Everything is still stored
+ * and compared in UTC — `businessHourToUtc` (src/lib/timezone.ts) converts
+ * these to the correct UTC instant per calendar date, DST included.
  */
-export const DEFAULT_BUSINESS_HOURS = { startHour: 9, endHour: 19 } as const;
+export type BusinessHours = { startHour: number; endHour: number; timeZone?: string };
+export const DEFAULT_BUSINESS_HOURS: BusinessHours = { startHour: 9, endHour: 19 };
 
 export type BookingItemInput = {
   serviceId: string;
@@ -225,7 +227,7 @@ export type FindNextAvailableSlotInput = {
   earliestStart: Date;
   searchWindowDays?: number;
   stepMinutes?: number;
-  businessHours?: { startHour: number; endHour: number };
+  businessHours?: BusinessHours;
 };
 
 /**
@@ -248,18 +250,19 @@ export async function findNextAvailableSlot(
     0,
   );
 
+  const timeZone = businessHours.timeZone ?? SALON_TIMEZONE;
   let candidate = roundUpToStep(input.earliestStart, stepMinutes);
 
   for (let day = 0; day < searchWindowDays; day++) {
     const dayAnchor = new Date(candidate);
-    const dayOpen = atUtcHour(dayAnchor, businessHours.startHour);
-    const dayClose = atUtcHour(dayAnchor, businessHours.endHour);
+    const dayOpen = businessHourToUtc(dayAnchor, businessHours.startHour, timeZone);
+    const dayClose = businessHourToUtc(dayAnchor, businessHours.endHour, timeZone);
 
     let slot = candidate < dayOpen ? dayOpen : candidate;
 
     while (slot.getTime() + totalActiveAndGapMinutes * 60_000 <= dayClose.getTime()) {
       const segments = planSequentialSegments(slot, planItems);
-       
+
       const busy = await anySegmentBusy(segments);
       if (!busy) {
         return { startTime: segments[0].startTime, endTime: segments[segments.length - 1].endTime };
@@ -267,7 +270,7 @@ export async function findNextAvailableSlot(
       slot = new Date(slot.getTime() + stepMinutes * 60_000);
     }
 
-    candidate = atUtcHour(addDays(dayAnchor, 1), businessHours.startHour);
+    candidate = businessHourToUtc(addDays(dayAnchor, 1), businessHours.startHour, timeZone);
   }
 
   return null;
@@ -294,14 +297,114 @@ function roundUpToStep(date: Date, stepMinutes: number): Date {
   return new Date(Math.ceil(date.getTime() / ms) * ms);
 }
 
-function atUtcHour(date: Date, hour: number): Date {
-  const d = new Date(date);
-  d.setUTCHours(hour, 0, 0, 0);
-  return d;
-}
-
 function addDays(date: Date, days: number): Date {
   const d = new Date(date);
   d.setUTCDate(d.getUTCDate() + days);
   return d;
+}
+
+export type ListSlotsForDateInput = {
+  items: BookingItemInput[];
+  date: Date;
+  stepMinutes?: number;
+  businessHours?: BusinessHours;
+};
+
+/**
+ * All fitting start times for one specific calendar day — the data behind
+ * the "14:30 / 15:15 / …" clickable blocks in the time-picker step. Slots
+ * before `now` are excluded so a same-day view never offers the past.
+ */
+export async function listAvailableSlotsForDate(
+  input: ListSlotsForDateInput,
+): Promise<{ startTime: Date; endTime: Date }[]> {
+  const stepMinutes = input.stepMinutes ?? 15;
+  const businessHours = input.businessHours ?? DEFAULT_BUSINESS_HOURS;
+  const timeZone = businessHours.timeZone ?? SALON_TIMEZONE;
+
+  const planItems = await loadAndValidatePlanItems(prisma, input.items);
+  const totalActiveAndGapMinutes = planItems.reduce(
+    (sum, item, index) =>
+      sum + item.durationMinutes + (index < planItems.length - 1 ? item.processingTimeMinutes : 0),
+    0,
+  );
+
+  const dayOpen = businessHourToUtc(input.date, businessHours.startHour, timeZone);
+  const dayClose = businessHourToUtc(input.date, businessHours.endHour, timeZone);
+  const now = new Date();
+  let slot = roundUpToStep(dayOpen > now ? dayOpen : now, stepMinutes);
+  if (slot < dayOpen) slot = dayOpen;
+
+  const results: { startTime: Date; endTime: Date }[] = [];
+  while (slot.getTime() + totalActiveAndGapMinutes * 60_000 <= dayClose.getTime()) {
+    const segments = planSequentialSegments(slot, planItems);
+
+    const busy = await anySegmentBusy(segments);
+    if (!busy) {
+      results.push({
+        startTime: segments[0].startTime,
+        endTime: segments[segments.length - 1].endTime,
+      });
+    }
+    slot = new Date(slot.getTime() + stepMinutes * 60_000);
+  }
+
+  return results;
+}
+
+export type AutoAssignmentResult = {
+  items: BookingItemInput[];
+  slot: { startTime: Date; endTime: Date };
+  /** True when no single employee covers the whole combo alone. */
+  requiresMultipleEmployees: boolean;
+};
+
+/**
+ * Resolves the "Az első szabad időpontot kérem" flow: finds the earliest
+ * slot across every employee who can single-handedly perform the whole
+ * combo. If nobody can (or none of them has room in the search window),
+ * falls back to a fixed one-employee-per-service assignment (first
+ * qualified, active employee for each service) and searches that instead.
+ *
+ * This is a deliberately simple heuristic, not a full combinatorial
+ * optimizer over every possible multi-employee split — reasonable for a
+ * salon-sized team, and easy to extend later if needed.
+ */
+export async function resolveAutoAssignment(
+  serviceIds: string[],
+  earliestStart: Date,
+  options?: { searchWindowDays?: number; stepMinutes?: number },
+): Promise<AutoAssignmentResult | null> {
+  const employees = await getActiveEmployeesWithQualifications();
+  const soloCandidates = findEmployeesQualifiedForAll(employees, serviceIds);
+
+  let best: AutoAssignmentResult | null = null;
+  for (const employee of soloCandidates) {
+    const items = serviceIds.map((serviceId) => ({ serviceId, employeeId: employee.id }));
+     
+    const slot = await findNextAvailableSlot({ items, earliestStart, ...options });
+    if (slot && (!best || slot.startTime < best.slot.startTime)) {
+      best = { items, slot, requiresMultipleEmployees: false };
+    }
+  }
+  if (best) return best;
+
+  const fallbackItems: BookingItemInput[] = [];
+  for (const serviceId of serviceIds) {
+    const candidate = employees.find((e) => e.serviceIds.includes(serviceId));
+    if (!candidate) return null; // nobody on the team offers this service
+    fallbackItems.push({ serviceId, employeeId: candidate.id });
+  }
+  const fallbackSlot = await findNextAvailableSlot({
+    items: fallbackItems,
+    earliestStart,
+    ...options,
+  });
+  if (!fallbackSlot) return null;
+
+  return {
+    items: fallbackItems,
+    slot: fallbackSlot,
+    requiresMultipleEmployees: new Set(fallbackItems.map((i) => i.employeeId)).size > 1,
+  };
 }

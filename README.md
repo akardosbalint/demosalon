@@ -4,9 +4,10 @@ Production-grade foglalási rendszer szépségszalon számára: több alkalmazot
 kombinálható szolgáltatások, feldolgozási idő (pl. hajfestés pácolása) és
 adatbázis-szintű ütközés-detektálás.
 
-**Ez a repó jelenlegi állapota:** az első fázis — a Prisma séma és az
-ütközés-detektáló logika — kész és tesztelve. A vendég- és admin-oldali UI
-még nem készült el.
+**Ez a repó jelenlegi állapota:**
+1. ✅ Prisma séma + adatbázis-szintű ütközés-detektálás (tesztelve)
+2. ✅ Vendégoldali foglalási folyamat, 4 lépésben (`/foglalas`)
+3. ⬜ Admin felület (naptár-nézet, manuális foglalás, statisztika) — még nincs
 
 ## Stack
 
@@ -82,6 +83,33 @@ Employee ──< EmployeeService >── Service ──< ServiceComboItem >─�
   célra. Ezért a lemondott foglalások pontos időpontja utólag nem kereshető —
   ez tudatos MVP-egyszerűsítés.
 
+## Vendégoldali foglalási folyamat
+
+A `/foglalas` útvonal egy 4 lépéses, mobil-first varázslót valósít meg a
+specifikáció szerint: (1) szolgáltatás/kombináció, (2) szakember (kedvenc
+vagy "első szabad"), (3) nap+idő napszak szerint csoportosítva, (4)
+adatok+megerősítés. Regisztráció nem szükséges. Sticky "Tovább" gomb minden
+lépésen, konkrét CTA-szöveggel ("Időpont lefoglalása").
+
+- **"Első szabad időpontot kérem" mód**: a `resolveAutoAssignment`
+  (`src/lib/booking.ts`) megkeresi, melyik egyetlen alkalmazott végzi el a
+  teljes kombinációt leghamarabb; ha senki nem fedi le egyedül, egy
+  determinisztikus (első jogosult alkalmazottankénti) többszemélyes
+  felosztásra esik vissza — ez egy tudatosan egyszerű heurisztika, nem teljes
+  kombinatorikus optimalizáló.
+- **Ütközés-visszajelzés élesben**: ha valaki időközben lefoglalja a
+  kiválasztott slotot, a szerver a DB `EXCLUDE` constraint hibáját emberi
+  üzenetté + konkrét alternatív időponttá alakítja, amit a UI egy kattintással
+  megajánl ("foglalom ezt helyette") — a `StepDetails` komponens ezt azonnal
+  újra is próbálja, új tranzakcióban.
+- **Időzóna**: az üzleti órák (`DEFAULT_BUSINESS_HOURS`) Europe/Budapest helyi
+  idő szerint értendők; a `src/lib/timezone.ts` dependency-mentes,
+  nyári/téli időszámítás-biztos konverziót végez UTC és helyi idő között
+  (lásd `timezone.test.ts`, benne egy explicit DST-határnap teszttel).
+- **Email/SMS**: `src/lib/notifications.ts` jelenleg csak naplóz (nincs
+  Resend/Twilio API-kulcs ebben a környezetben) — a hívási pontok már a
+  helyükön vannak, éles bekötéskor csak ezt a fájlt kell cserélni.
+
 ## Fájlok
 
 - `prisma/schema.prisma` — adatmodell
@@ -89,7 +117,13 @@ Employee ──< EmployeeService >── Service ──< ServiceComboItem >─�
 - `prisma/seed.ts` — demo adatok (5 alkalmazott, 10 szolgáltatás, 3 kombináció)
 - `src/lib/scheduling.ts` — tiszta, DB-mentes időzítés-számítás (egység tesztelt)
 - `src/lib/booking.ts` — tranzakciós foglalás-létrehozás, lemondás, szabad
-  időpont keresés
+  időpont keresés, auto-hozzárendelés
 - `src/lib/booking-errors.ts` — emberi nyelvű domain hibák
+- `src/lib/catalog.ts` — csak-olvasható lekérdezések (szolgáltatások, kombók,
+  alkalmazottak)
+- `src/lib/timezone.ts` — Europe/Budapest ⇄ UTC konverzió, DST-biztos
+- `src/lib/notifications.ts` — email/SMS visszaigazolás és emlékeztető (stub)
+- `src/app/foglalas/` — a 4 lépéses vendég-foglalási folyamat (wizard,
+  server actions, komponensek)
 - `src/lib/__tests__/` — egység- és integrációs tesztek, beleértve a
   race-condition tesztet
